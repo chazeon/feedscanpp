@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "feedscanpp"
+version = "0.1.0"
+description = "A robust document and receipt scanner optimized for ADF and thermal paper."
+readme = "README.md"
+authors = [
+  { name = "Chenxing Luo", email = "chenxing.luo@gmail.com" },
+]
+license = { text = "MIT" }
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "opencv-python>=4.6.0",
+    "numpy>=1.21.0",
+    "imutils>=0.5.4",
+    "click>=8.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/chazeon/feedscanpp"
+"Bug Tracker" = "https://github.com/chazeon/feedscanpp/issues"
+
+# This creates a command line tool 'feedscanpp' that runs your main() function
+[project.scripts]
+feedscanpp = "feedscanpp.main:main"
+
+# Optional: Tools configuration
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+dev = [
+    "opencv-stubs[opencv]",
+    "mypy",
+    "ruff",
+]
