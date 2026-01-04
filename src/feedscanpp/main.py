@@ -1,7 +1,7 @@
 import click
 import cv2
 from pathlib import Path
-from .analysis import detect_color_mode, remove_tint
+from .analysis import detect_color_mode, remove_tint, enhance_image
 from .rotation import detect_skew_angle, rotate_image
 from .trim import trim_image
 
@@ -28,6 +28,8 @@ def main(files, output):
 
         mode = detect_color_mode(image)
         print(f" - Detected Mode: {mode}")
+
+        image = enhance_image(image, mode)
 
         # 4. Save
         output_path = output.format(

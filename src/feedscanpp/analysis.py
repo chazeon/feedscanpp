@@ -15,20 +15,20 @@ def detect_color_mode(image, thumb_size=500):
 
     # 1. HSV Analysis
     hsv = cv2.cvtColor(thumb, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(hsv)
+    hue, sat, val = cv2.split(hsv)
 
     # --- STEP 1: DETECT COLOR (Sparse vs Full) ---
-    
+
     # "Potential Color": Any pixel with Saturation > 25 (0-255 scale).
     # This filters out gray paper and white background.
-    color_mask = (s > 25)
+    color_mask = (sat > 25)
     color_pixels = np.count_nonzero(color_mask)
     color_ratio = color_pixels / thumb.size
 
     if color_ratio > 0:
         # Calculate the AVERAGE saturation of only the "colored" pixels.
         # This tells us: "Is the color we found Vivid (Ink) or Dull (Noise)?"
-        avg_saturation = np.mean(s[color_mask])
+        avg_saturation = np.mean(sat[color_mask])
     else:
         avg_saturation = 0
 
@@ -36,7 +36,7 @@ def detect_color_mode(image, thumb_size=500):
     # If > 2% of the page is colored, it's definitely not B&W.
     if color_ratio > 0.02:
         # Sepia Check: High coverage, but low variance in Hue (all yellow/brown)
-        if np.std(h[color_mask]) < 20: 
+        if np.std(hue[color_mask]) < 20:
             return "Grayscale"  # Treat Sepia as Grayscale for simplicity
         return "Color"
 
@@ -49,11 +49,11 @@ def detect_color_mode(image, thumb_size=500):
             return "Color" # Small vivid text found!
 
     # --- STEP 2: DETECT B&W vs GRAYSCALE ---
-    
+
     # If we are here, the image is effectively Monochromatic.
     # We check the HISTOGRAM of the Value channel.
-    
-    hist = cv2.calcHist([v], [0], None, [256], [0, 256])
+
+    hist = cv2.calcHist([val], [0], None, [256], [0, 256])
     
     # A clean B&W doc has two spikes: Ink (0-50) and Paper (200-255).
     # A Grayscale photo has a "hill" in the middle (50-200).
