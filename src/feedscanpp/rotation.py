@@ -28,6 +28,10 @@ def detect_skew_angle(image):
     x = np.cos(4 * angles)
     y = np.sin(4 * angles)
 
+    # Mask out large angles by setting their weights to zero
+    mask = np.abs(x) < 0.2
+    weights[~mask] = 0.0
+
     # Calculate the weighted center of mass of the vectors
     sum_x = np.sum(x * weights)
     sum_y = np.sum(y * weights)
