@@ -1,46 +1,56 @@
 import cv2
 import numpy as np
-import imutils  # type: ignore
+import imutils
 
 def detect_skew_angle(image):
-    """
-    Detects the skew angle of the document in the image using Hough Transform
-    and circular statistics for sub-degree accuracy.
+    # Resize for speed
+    resizing_factor = 800.0 / image.shape[0]
+    small_img = imutils.resize(image, height=800)
+    
+    gray = cv2.cvtColor(small_img, cv2.COLOR_BGR2GRAY)
+    # Use a slightly more adaptive Canny or a blur to reduce noise
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blur, 50, 150, apertureSize=3)
 
-    Returns the angle in degrees to rotate the image to correct orientation.
-    """
-    image = imutils.resize(image, height=800)
-
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-
-    lines = cv2.HoughLinesWithAccumulator(edges, 1, np.pi/180, 100)[:80]
+    # Standard Hough Lines provides (rho, theta)
+    lines = cv2.HoughLinesWithAccumulator(edges, 1, np.pi/180, 100)
+    
     if lines is None:
         return 0.0
 
-    # Extract angles (theta) from HoughLines
-    angles = lines[:, :, 1].flatten()
-    weights = lines[:, :, 2].flatten() ** 2
+    lines = lines[:80] # Take top 80 strongest lines
+    
+    # Extract theta (index 1) and accumulator votes (index 2)
+    angles = lines[:, 0, 1]
+    weights = lines[:, 0, 2].astype(float) ** 2
 
-    # Map angles to 90-degree periodicity
-    # Since grids have 4-fold symmetry, we multiply by 4
-    # This maps 0°, 90°, 180°, 270° all to the same vector direction
+    # Map to 4th harmonic for 90-degree symmetry
+    # We subtract pi/2 if we want 0 to represent "upright" 
+    # but the 4x trick usually handles the wrapping.
     x = np.cos(4 * angles)
     y = np.sin(4 * angles)
 
-    # Mask out large angles by setting their weights to zero
-    mask = np.abs(x) < 0.2
-    weights[~mask] = 0.0
-
-    # Calculate the weighted center of mass of the vectors
     sum_x = np.sum(x * weights)
     sum_y = np.sum(y * weights)
 
-    # Convert back to an angle
     combined_angle_4theta = np.arctan2(sum_y, sum_x)
+    # This gives us the dominant angle in a 90-degree range
     refined_angle_rad = combined_angle_4theta / 4
+    
+    # Convert to degrees
     refined_angle_deg = np.rad2deg(refined_angle_rad)
 
+    # IMPORTANT: Hough theta is measured from the vertical axis.
+    # To get the rotation angle to straighten the image:
+    # If the dominant line is vertical (0 rad), rotation should be 0.
+    # If the dominant line is horizontal (pi/2 rad), rotation should be 0.
+    
+    # Adjusting the output:
+    if refined_angle_deg > 45:
+        return refined_angle_deg - 90
+    elif refined_angle_deg < -45:
+        return refined_angle_deg + 90
+        
     return refined_angle_deg
 
 def rotate_image(image, angle):
