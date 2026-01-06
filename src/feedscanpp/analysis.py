@@ -70,44 +70,36 @@ def detect_color_mode(image, thumb_size=500):
     return "Black & White"
 
 def remove_tint(image):
-    """
-    Removes yellow/gray background -> White.
-    Keeps Red/Blue/Green ink vivid.
-    """
-    # 1. Split into 3 channels (Blue, Green, Red)
-    planes = cv2.split(image)
-    norm_planes = []
+    # 1. Convert to HSV to isolate "Value" (Brightness)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv)
 
-    # 2. Process each color channel independently
-    for plane in planes:
-        # --- A. Estimate Background ---
-        # Dilate to find the paper color (ignoring the ink)
-        dilated = cv2.dilate(plane, np.ones((25, 25), np.uint8))
-        
-        # Blur to smooth the estimate
-        bg_estimate = cv2.medianBlur(dilated, 21)
-        
-        # --- B. Normalize (Divide) ---
-        # Result = (Plane / Background) * 255
-        # This forces the background to 255 (White) in this specific color channel
-        normalized = cv2.divide(plane, bg_estimate, scale=255)
-        
-        norm_planes.append(normalized)
-
-    # 3. Merge back into a Color Image
-    result = cv2.merge(norm_planes)  # type: ignore[arg-type]
-
-    # 4. Level Adjustment (Optional but Recommended)
-    # This makes the ink darker and crisper, just like your example.
-    # We apply a slight gamma correction to all channels.
-    invGamma = 0.95  # 1.0 = No change. Lower (0.8-0.9) = Darker/Vivid ink.
+    # 2. Estimate the background tint using the Value channel
+    # Using a larger kernel for dilation to ensure we cover large text/stamps
+    kernel = np.ones((41, 41), np.uint8)
+    dilated = cv2.dilate(v, kernel)
     
-    table = np.array([((i / 255.0) ** invGamma) * 255
-                      for i in np.arange(0, 256)]).astype("uint8")
-    
-    final_result = cv2.LUT(result, table)
+    # Use a large Gaussian blur instead of Median for smoother transitions
+    bg_estimate = cv2.GaussianBlur(dilated, (41, 41), 0)
 
-    return final_result
+    # 3. Division Normalization (v / bg_estimate)
+    # This turns the background (paper) into pure white (255)
+    # We use float32 to avoid rounding errors during math
+    v_norm = cv2.divide(v, bg_estimate, scale=255)
+
+    # 4. Merge back and convert to BGR
+    final_hsv = cv2.merge([h, s, v_norm])
+    result = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
+
+    # 5. Local Contrast Enhancement (Optional but replaces your Gamma logic)
+    # CLAHE works much better than a global Gamma for making ink "pop"
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    lab = cv2.cvtColor(result, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    l = clahe.apply(l)
+    result = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
+
+    return result
 
 def enhance_image(image, mode: str):
     """
