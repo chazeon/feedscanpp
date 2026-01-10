@@ -8,29 +8,38 @@ from .trim import trim_image
 @click.command()
 @click.argument("files", nargs=-1, type=click.Path(exists=True))
 @click.option("--output", "-o", type=click.Path(), required=True, help="Output file path")
-def main(files, output):
+@click.option("--no-rotate", is_flag=True, help="Disable rotation correction")
+@click.option("--no-trim", is_flag=True, help="Disable trimming")
+@click.option("--no-tint", is_flag=True, help="Disable tint removal")
+@click.option("--no-enhance", is_flag=True, help="Disable enhancement")
+def main(files, output, no_rotate, no_trim, no_tint, no_enhance):
     for index, file in enumerate(files):
 
         path = Path(file)
 
         print(f"Processing: {path}")
 
-        # 1. Fix rotation
         image = cv2.imread(str(path))
-        angle = detect_skew_angle(image)
-        print(f" - Detected Skew Angle: {angle:.2f} degrees")
-        image = rotate_image(image, angle)
+
+        # 1. Fix rotation
+        if not no_rotate:
+            angle = detect_skew_angle(image)
+            print(f" - Detected Skew Angle: {angle:.2f} degrees")
+            image = rotate_image(image, angle)
 
         # 2. Trim
-        image = trim_image(image)
+        if not no_trim:
+            image = trim_image(image)
 
-        # 3. Analyze & Enhance
-        image = remove_tint(image)
+        # 3. Remove tint
+        if not no_tint:
+            image = remove_tint(image)
 
-        mode = detect_color_mode(image)
-        print(f" - Detected Mode: {mode}")
-
-        image = enhance_image(image, mode)
+        # 4. Analyze & Enhance
+        if not no_enhance:
+            mode = detect_color_mode(image)
+            print(f" - Detected Mode: {mode}")
+            image = enhance_image(image, mode)
 
         # 4. Save
         output_path = output.format(
