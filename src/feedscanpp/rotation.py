@@ -5,7 +5,7 @@ from scipy.optimize import minimize_scalar
 
 def detect_skew_angle(image):
     """
-    Detects the skew angle of an image using the 4th harmonic of Hough Lines.
+    Detects the skew angle of an image using FFT magnitude spectrum analysis.
     Returns the angle in degrees needed to rotate the image to be upright.
     """
 
@@ -36,7 +36,7 @@ def detect_skew_angle(image):
     padded = (padded.astype(float) * window).astype(np.float32)
 
     # 2. Compute FFT
-    dft = cv2.dft(np.float32(padded), flags=cv2.DFT_COMPLEX_OUTPUT)
+    dft = cv2.dft(padded, flags=cv2.DFT_COMPLEX_OUTPUT)
     dft_shift = np.fft.fftshift(dft)
 
     # 3. Calculate Magnitude Spectrum
@@ -56,8 +56,8 @@ def detect_skew_angle(image):
         radius = min(h, w) // 3  # Use the central 1/3rd where signal is strongest
         cv2.circle(mask, center, radius, 255, -1)
         
-        # Apply mask
-        valid_region = cv2.bitwise_and(rotated, rotated, mask=mask)
+        # Apply mask (using np.where for proper float masking)
+        valid_region = np.where(mask > 0, rotated, 0)
 
         # 3. Robust Scoring: Sum variance of horizontal projections
         # We sum rows but only within the central mask region
@@ -67,7 +67,7 @@ def detect_skew_angle(image):
         # Variance is maximized when parallel text strips align
         return -np.std(col_sums) ** 8 - np.std(row_sums) ** 8
     # 4. Optimization Search
-    # The FFT beam is perpendicular to text. Search range (-45 to 45).
+    # The FFT beam is perpendicular to text. Search range (-5 to 5).
     # We use Brent's method to find the peak energy angle.
     res = minimize_scalar(get_radial_score_masked, args=(magnitude,), 
                             bounds=(-5, 5), method='bounded', options={'xatol': 0.001})
