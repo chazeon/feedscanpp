@@ -1,58 +1,80 @@
 import cv2
 import numpy as np
 import imutils
+from scipy.optimize import minimize_scalar
 
 def detect_skew_angle(image):
     """
     Detects the skew angle of an image using the 4th harmonic of Hough Lines.
     Returns the angle in degrees needed to rotate the image to be upright.
     """
-    # 1. Preprocessing for speed and noise reduction
-    # We resize to a standard height to make the Hough parameters more consistent
-    small_img = imutils.resize(image, height=800)
-    gray = cv2.cvtColor(small_img, cv2.COLOR_BGR2GRAY)
+
+    small_img = imutils.resize(image, width=600)
+
+    gray = 255 - cv2.cvtColor(small_img, cv2.COLOR_BGR2GRAY)
+
+    # 1. Determine the largest dimension to make it a square
+    h, w = gray.shape
+    side = max(cv2.getOptimalDFTSize(h), cv2.getOptimalDFTSize(w))
+
+    # 2. Pad to a SQUARE (side x side)
+    pad_y = side - h
+    pad_x = side - w
+
+    # Center the image in the square to keep the FFT "beam" centered
+    top, bottom = pad_y // 2, pad_y - (pad_y // 2)
+    left, right = pad_x // 2, pad_x - (pad_x // 2)
+
+    padded = cv2.copyMakeBorder(gray, top, bottom, left, right, 
+                                cv2.BORDER_CONSTANT, value=0)
     
-    # Blur helps merge text characters into "lines" for better detection
-    blur = cv2.GaussianBlur(gray, (7, 7), 0)
-    edges = cv2.Canny(blur, 50, 150, apertureSize=3)
+    padded = cv2.GaussianBlur(padded, (7, 7), 0)
 
-    # 2. Standard Hough Transform
-    # rho=1, theta=1 degree, threshold=100
-    lines = cv2.HoughLinesWithAccumulator(edges, 1, np.pi/180, 100)
-    
-    if lines is None:
-        return 0.0
+    window_y = np.hanning(side)
+    window_x = np.hanning(side)
+    window = np.outer(window_y, window_x)
+    padded = (padded.astype(float) * window).astype(np.float32)
 
-    # Limit to the top 80 strongest lines to avoid processing noise
-    lines = lines[:80] 
-    
-    # Extract theta (index 1) and weights (accumulator votes, index 2)
-    angles = lines[:, 0, 1]
-    weights = lines[:, 0, 2].astype(float) ** 2 # Square weights to prioritize stronger lines
+    # 2. Compute FFT
+    dft = cv2.dft(np.float32(padded), flags=cv2.DFT_COMPLEX_OUTPUT)
+    dft_shift = np.fft.fftshift(dft)
 
-    # 3. 4th Harmonic Mapping
-    # This treats 0, 90, 180, and 270 degrees as the same orientation.
-    # It solves the problem of "horizontal vs vertical" ambiguity.
-    sum_x = np.sum(np.cos(4 * angles) * weights)
-    sum_y = np.sum(np.sin(4 * angles) * weights)
+    # 3. Calculate Magnitude Spectrum
+    magnitude = 20 * np.log(cv2.magnitude(dft_shift[:,:,0], dft_shift[:,:,1]) + 1)
 
-    # Result is in range [-pi, pi]
-    combined_angle_4theta = np.arctan2(sum_y, sum_x)
-    
-    # Convert back to actual angle in degrees [-45, 45]
-    refined_angle_deg = np.rad2deg(combined_angle_4theta / 4)
+    def get_radial_score_masked(angle, mag_spectrum):
+        h, w = mag_spectrum.shape
+        center = (w // 2, h // 2)
+        
+        # 1. Rotate the spectrum
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        rotated = cv2.warpAffine(mag_spectrum, M, (w, h), flags=cv2.INTER_CUBIC)
+        
+        # 2. Apply a circular mask to ignore the dark 'corners' created by rotation
+        # This ensures the score is based ONLY on real FFT data
+        mask = np.zeros((h, w), dtype=np.uint8)
+        radius = min(h, w) // 3  # Use the central 1/3rd where signal is strongest
+        cv2.circle(mask, center, radius, 255, -1)
+        
+        # Apply mask
+        valid_region = cv2.bitwise_and(rotated, rotated, mask=mask)
 
-    # 4. Final Normalization
-    # Since OpenCV Hough 0 is vertical and 90 is horizontal, 
-    # we normalize the output to ensure the smallest rotation is chosen.
-    if refined_angle_deg > 45:
-        skew_angle = refined_angle_deg - 90
-    elif refined_angle_deg < -45:
-        skew_angle = refined_angle_deg + 90
-    else:
-        skew_angle = refined_angle_deg
+        # 3. Robust Scoring: Sum variance of horizontal projections
+        # We sum rows but only within the central mask region
+        # To do this correctly, we take the sum and then only use the central indices
+        row_sums = np.sum(valid_region, axis=1)
+        col_sums = np.sum(valid_region, axis=0)
+        # Variance is maximized when parallel text strips align
+        return -np.std(col_sums) ** 8 - np.std(row_sums) ** 8
+    # 4. Optimization Search
+    # The FFT beam is perpendicular to text. Search range (-45 to 45).
+    # We use Brent's method to find the peak energy angle.
+    res = minimize_scalar(get_radial_score_masked, args=(magnitude,), 
+                            bounds=(-5, 5), method='bounded', options={'xatol': 0.001})
 
-    # Return the inverse to use directly in cv2.getRotationMatrix2D
+    # The beam angle is perpendicular to the skew angle
+    skew_angle = res.x
+
     return skew_angle
 
 def rotate_image(image, angle):

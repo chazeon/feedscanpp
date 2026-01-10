@@ -18,6 +18,7 @@ def main(files, output):
         # 1. Fix rotation
         image = cv2.imread(str(path))
         angle = detect_skew_angle(image)
+        print(f" - Detected Skew Angle: {angle:.2f} degrees")
         image = rotate_image(image, angle)
 
         # 2. Trim
