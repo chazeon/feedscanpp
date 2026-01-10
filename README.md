@@ -14,11 +14,19 @@ Tested with Epson ES-C200 scanner using `scanimage` set to color mode.
 
 ## Installation
 
+### Using pip
+
 ```bash
 pip install feedscanpp
 ```
 
-Or from source:
+### Using uvx (no installation required)
+
+```bash
+uvx --from git+https://github.com/chazeon/feedscanpp.git feedscanpp scan-*.png -o output-{index}.png
+```
+
+### From source
 
 ```bash
 git clone https://github.com/chazeon/feedscanpp.git
